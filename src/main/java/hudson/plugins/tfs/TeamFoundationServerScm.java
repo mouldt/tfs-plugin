@@ -47,6 +47,8 @@ import hudson.scm.SCMDescriptor;
 import hudson.util.FormValidation;
 import hudson.util.LogTaskListener;
 import hudson.util.Scrambler;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import org.kohsuke.stapler.QueryParameter;
 
 /**
@@ -69,6 +71,7 @@ public class TeamFoundationServerScm extends SCM {
     private final String workspaceName;
     private final String userPassword;
     private final String userName;
+    private final String versionSpec;
     private final boolean useUpdate;
     
     private TeamFoundationServerRepositoryBrowser repositoryBrowser;
@@ -79,7 +82,7 @@ public class TeamFoundationServerScm extends SCM {
     private static final Logger logger = Logger.getLogger(TeamFoundationServerScm.class.getName()); 
 
     @DataBoundConstructor
-    public TeamFoundationServerScm(String serverUrl, String projectPath, String localPath, boolean useUpdate, String workspaceName, String userName, String userPassword) {
+    public TeamFoundationServerScm(String serverUrl, String projectPath, String localPath, boolean useUpdate, String workspaceName, String userName, String userPassword, String versionSpec) {
         this.serverUrl = serverUrl;
         this.projectPath = projectPath;
         this.useUpdate = useUpdate;
@@ -87,6 +90,7 @@ public class TeamFoundationServerScm extends SCM {
         this.workspaceName = (Util.fixEmptyAndTrim(workspaceName) == null ? "Hudson-${JOB_NAME}-${NODE_NAME}" : workspaceName);
         this.userName = userName;
         this.userPassword = Scrambler.scramble(userPassword);
+        this.versionSpec = versionSpec;
     }
 
     // Bean properties need for job configuration
@@ -104,6 +108,10 @@ public class TeamFoundationServerScm extends SCM {
 
     public String getLocalPath() {
         return localPath;
+    }
+
+    public String getVersionSpec() {
+        return versionSpec;
     }
 
     public boolean isUseUpdate() {
@@ -132,6 +140,10 @@ public class TeamFoundationServerScm extends SCM {
 
     public String getServerUrl(Run<?,?> run) {
         return substituteBuildParameter(run, serverUrl);
+    }
+    
+    public String getVersionSpec(Run<?,?> run) {
+        return substituteBuildParameter(run, versionSpec);
     }
 
     String getProjectPath(Run<?,?> run) {
@@ -168,8 +180,9 @@ public class TeamFoundationServerScm extends SCM {
         
         build.addAction(workspaceConfiguration);
         CheckoutAction action = new CheckoutAction(workspaceConfiguration.getWorkspaceName(), workspaceConfiguration.getProjectPath(), workspaceConfiguration.getWorkfolder(), isUseUpdate());
+        String versionSpec = this.versionSpec.length() > 0 ? getVersionSpec(build) : "";
         try {
-            List<ChangeSet> list = action.checkout(server, workspaceFilePath, (build.getPreviousBuild() != null ? build.getPreviousBuild().getTimestamp() : null), build.getTimestamp());
+            List<ChangeSet> list = versionSpec.length() > 0 ? action.checkout(server, workspaceFilePath, versionSpec) : action.checkout(server, workspaceFilePath, (build.getPreviousBuild() != null ? build.getPreviousBuild().getTimestamp() : null), build.getTimestamp());
             ChangeSetWriter writer = new ChangeSetWriter();
             writer.write(list, changelogFile);
         } catch (ParseException pe) {
@@ -179,11 +192,16 @@ public class TeamFoundationServerScm extends SCM {
 
         try {
             setWorkspaceChangesetVersion(null);
-            String projectPath = workspaceConfiguration.getProjectPath();
-            String workFolder = workspaceConfiguration.getWorkfolder();
-            String workspaceName = workspaceConfiguration.getWorkspaceName();
-            Project project = server.getProject(projectPath);
-            setWorkspaceChangesetVersion(project.getWorkspaceChangesetVersion(workFolder, workspaceName, getUserName()));
+            if (versionSpec.length() > 0)
+                setWorkspaceChangesetVersion(versionSpec);
+            else
+            {
+                String projectPath = workspaceConfiguration.getProjectPath();
+                String workFolder = workspaceConfiguration.getWorkfolder();
+                String workspaceName = workspaceConfiguration.getWorkspaceName();
+                Project project = server.getProject(projectPath);
+                setWorkspaceChangesetVersion(project.getWorkspaceChangesetVersion(workFolder, workspaceName, getUserName()));
+            }
         } catch (ParseException pe) {
             listener.fatalError(pe.getMessage());
             throw new AbortException();
@@ -380,6 +398,58 @@ public class TeamFoundationServerScm extends SCM {
             return doRegexCheck(new Pattern[]{WORKSPACE_NAME_REGEX},
                     "Workspace name cannot end with a space or period, and cannot contain any of the following characters: \"/:<>|*?", 
                     "Workspace name is mandatory", value);
+        }
+        
+        public FormValidation doVersionSpecCheck(@QueryParameter final String value) {
+            return checkVersionSpec(value);
+        }
+        
+        public static FormValidation checkVersionSpec(@QueryParameter final String value) {
+            FormValidation ret = FormValidation.ok();
+            String val = fixEmpty(value);
+            if (val != null)
+            {
+                String content;
+                
+                if (val.length() > 1)
+                {
+                    content = val.substring(1);
+                
+                    switch (val.charAt(0))
+                    {
+                        case 'D':
+                            try{
+                                SimpleDateFormat formatter = new SimpleDateFormat("MM/dd/yyyy");
+                                formatter.setLenient(false);
+                                Date parsedDate = formatter.parse(content);
+                            }
+                            catch (ParseException ex){
+                                ret = FormValidation.error("Version Spec does not contain a date of the format DD/MM/YYYY.");
+                            }
+                            break;
+                        case 'C':
+                            try{
+                                Integer.parseInt(content);
+                            }
+                            catch (NumberFormatException ex){
+                                ret = FormValidation.error("Version Spec does not contain a number for the Changeset to retrieve.");
+                            }
+                            break;
+                        case 'L':
+                        case 'W':
+                            break;
+                        default:
+                            ret = FormValidation.error("Version Spec type is not recognised");
+                    }
+                }
+                else
+                {
+                    if (val.charAt(0) != 'T')
+                        ret = FormValidation.error("Version Spec is not long enough.");      
+                }
+                
+            }
+            return ret;
         }
         
         @Override

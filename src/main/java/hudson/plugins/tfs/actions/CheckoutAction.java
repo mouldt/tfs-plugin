@@ -28,7 +28,7 @@ public class CheckoutAction {
         this.useUpdate = useUpdate;
     }
 
-    public List<ChangeSet> checkout(Server server, FilePath workspacePath, Calendar lastBuildTimestamp, Calendar currentBuildTimestamp) throws IOException, InterruptedException, ParseException {
+    public Project checkoutCommon(Server server, FilePath workspacePath) throws IOException, InterruptedException, ParseException {
         
         Workspaces workspaces = server.getWorkspaces();
         Project project = server.getProject(projectPath);
@@ -49,7 +49,11 @@ public class CheckoutAction {
         } else {
             workspace = workspaces.getWorkspace(workspaceName);
         }
-        
+        return project;
+    }
+    
+    public List<ChangeSet> checkout(Server server, FilePath workspacePath, Calendar lastBuildTimestamp, Calendar currentBuildTimestamp) throws IOException, InterruptedException, ParseException {
+        Project project = checkoutCommon(server, workspacePath);
         project.getFiles(localFolder, "D" + DateUtil.TFS_DATETIME_FORMATTER.get().format(currentBuildTimestamp.getTime()));
         
         if (lastBuildTimestamp != null) {
@@ -57,5 +61,11 @@ public class CheckoutAction {
         }
         
         return new ArrayList<ChangeSet>();
+    }
+    
+    public List<ChangeSet> checkout(Server server, FilePath workspacePath, String versionSpec) throws IOException, InterruptedException, ParseException {
+        Project project = checkoutCommon(server, workspacePath);
+        project.getFiles(localFolder, versionSpec);
+        return new ArrayList<ChangeSet>();        
     }
 }

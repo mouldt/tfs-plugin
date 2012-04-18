@@ -34,6 +34,11 @@
             <f:textbox name="tfs.workspaceName" value="${h.defaulted(scm.workspaceName, 'Hudson-${JOB_NAME}-${NODE_NAME}')}"
              checkUrl="'${rootURL}/scm/TeamFoundationServerScm/workspaceNameCheck?value='+escape(this.value)"/>
         </f:entry>
+
+        <f:entry title="Version Spec" help="/plugin/tfs/versionspec.html">
+            <f:textbox name="tfs.versionSpec" value="${scm.versionSpec}"
+             checkUrl="'${rootURL}/scm/TeamFoundationServerScm/versionSpecCheck?value='+escape(this.value)"/>
+        </f:entry>
     </f:advanced>
     
     <t:listScmBrowsers name="tfs.browser" />
